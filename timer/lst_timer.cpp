@@ -28,6 +28,9 @@ void sort_timer_lst::add_timer(util_timer *timer)
         head = tail = timer;
         return;
     }
+
+    //如果新的定时器超时时间小于当前头部结点
+    //直接将当前定时器结点作为头部结点
     if (timer->expire < head->expire)
     {
         timer->next = head;
@@ -35,6 +38,8 @@ void sort_timer_lst::add_timer(util_timer *timer)
         head = timer;
         return;
     }
+
+    //否则调用私有成员函数，调整内部结点
     add_timer(timer, head);
 }
 void sort_timer_lst::adjust_timer(util_timer *timer)
@@ -44,10 +49,14 @@ void sort_timer_lst::adjust_timer(util_timer *timer)
         return;
     }
     util_timer *tmp = timer->next;
+
+    //被调整的定时器在链表尾部或定时器超时值仍然小于下一个定时器超时值，不调整
     if (!tmp || (timer->expire < tmp->expire))
     {
         return;
     }
+
+    //被调整定时器是链表头结点，将定时器取出，重新插入
     if (timer == head)
     {
         head = head->next;
@@ -55,6 +64,7 @@ void sort_timer_lst::adjust_timer(util_timer *timer)
         timer->next = NULL;
         add_timer(timer, head);
     }
+    //被调整定时器在内部，将定时器取出，重新插入
     else
     {
         timer->prev->next = timer->next;
@@ -194,7 +204,7 @@ void Utils::addsig(int sig, void(handler)(int), bool restart)
     sa.sa_handler = handler;
     if (restart)
         sa.sa_flags |= SA_RESTART;
-    sigfillset(&sa.sa_mask);
+    sigfillset(&sa.sa_mask); //sigfillset()用来将参数sa.sa_mask信号集初始化, 然后把所有的信号加入到此信号集里.
     assert(sigaction(sig, &sa, NULL) != -1);
 }
 
@@ -215,6 +225,8 @@ int *Utils::u_pipefd = 0;
 int Utils::u_epollfd = 0;
 
 class Utils;
+
+//从内核事件表删除事件，关闭文件描述符，释放连接资源。
 void cb_func(client_data *user_data)
 {
     epoll_ctl(Utils::u_epollfd, EPOLL_CTL_DEL, user_data->sockfd, 0);

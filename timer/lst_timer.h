@@ -24,27 +24,30 @@
 #include <time.h>
 #include "../log/log.h"
 
+//连接资源结构体成员需要用到定时器类
+//需要前向声明
 class util_timer;
 
 struct client_data
 {
-    sockaddr_in address;
-    int sockfd;
-    util_timer *timer;
+    sockaddr_in address; //客户端socket地址
+    int sockfd; //socket文件描述符
+    util_timer *timer; //定时器
 };
 
+//定时器类
 class util_timer
 {
 public:
     util_timer() : prev(NULL), next(NULL) {}
 
 public:
-    time_t expire;
+    time_t expire; //超时时间
     
-    void (* cb_func)(client_data *);
-    client_data *user_data;
-    util_timer *prev;
-    util_timer *next;
+    void (* cb_func)(client_data *); //回调函数
+    client_data *user_data; //连接资源
+    util_timer *prev; //前向定时器
+    util_timer *next; //后继定时器
 };
 
 class sort_timer_lst
@@ -59,6 +62,8 @@ public:
     void tick();
 
 private:
+    //私有成员，被公有成员add_timer和adjust_time调用
+    //主要用于调整链表内部结点
     void add_timer(util_timer *timer, util_timer *lst_head);
 
     util_timer *head;

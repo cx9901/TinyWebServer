@@ -46,19 +46,19 @@ public:
     };
     enum CHECK_STATE
     {
-        CHECK_STATE_REQUESTLINE = 0,
-        CHECK_STATE_HEADER,
-        CHECK_STATE_CONTENT
+        CHECK_STATE_REQUESTLINE = 0, //解析请求行
+        CHECK_STATE_HEADER, //解析请求头
+        CHECK_STATE_CONTENT //解析消息体，仅用于解析POST请求
     };
     enum HTTP_CODE
     {
-        NO_REQUEST,
-        GET_REQUEST,
-        BAD_REQUEST,
-        NO_RESOURCE,
-        FORBIDDEN_REQUEST,
-        FILE_REQUEST,
-        INTERNAL_ERROR,
+        NO_REQUEST, //请求不完整，需要继续读取请求报文数据，跳转主线程继续监测读事件
+        GET_REQUEST, //获得了完整的HTTP请求，调用do_request完成请求资源映射
+        BAD_REQUEST, //HTTP请求报文有语法错误或请求资源为目录，跳转process_write完成响应报文
+        NO_RESOURCE, //请求资源不存在，跳转process_write完成响应报文
+        FORBIDDEN_REQUEST, //请求资源禁止访问，没有读取权限，跳转process_write完成响应报文
+        FILE_REQUEST, //请求资源可以正常访问，跳转process_write完成响应报文
+        INTERNAL_ERROR, //服务器内部错误，该结果在主状态机逻辑switch的default下，一般不会触发
         CLOSED_CONNECTION
     };
     enum LINE_STATUS
@@ -84,7 +84,7 @@ public:
     }
     void initmysql_result(connection_pool *connPool);
     int timer_flag;
-    int improv;
+    int improv; //Reactor模式中，将读写客户端数据交给线程池中的线程做，做完了将improv设置为1
 
 
 private:
@@ -95,17 +95,21 @@ private:
     HTTP_CODE parse_headers(char *text);
     HTTP_CODE parse_content(char *text);
     HTTP_CODE do_request();
+
+    //m_start_line是行在buffer中的起始位置，将该位置后面的数据赋给text
+    //此时从状态机已提前将一行的末尾字符\r\n变为\0\0，所以text可以直接取出完整的行进行解析
     char *get_line() { return m_read_buf + m_start_line; };
+
     LINE_STATUS parse_line();
     void unmap();
     bool add_response(const char *format, ...);
-    bool add_content(const char *content);
-    bool add_status_line(int status, const char *title);
-    bool add_headers(int content_length);
-    bool add_content_type();
-    bool add_content_length(int content_length);
-    bool add_linger();
-    bool add_blank_line();
+    bool add_content(const char *content); //添加文本content
+    bool add_status_line(int status, const char *title); //添加状态行：http/1.1 状态码 状态消息
+    bool add_headers(int content_length); //添加消息报头，内部调用add_content_length和add_linger函数以及add_blank_line函数添加空行
+    bool add_content_type(); //添加文本类型，这里是html
+    bool add_content_length(int content_length); //记录响应报文长度，用于浏览器端判断服务器是否发送完数据
+    bool add_linger(); //添加连接状态，通知浏览器端是保持连接还是关闭
+    bool add_blank_line(); //添加空行
 
 public:
     static int m_epollfd;
@@ -117,8 +121,8 @@ private:
     int m_sockfd;
     sockaddr_in m_address;
     char m_read_buf[READ_BUFFER_SIZE];
-    int m_read_idx;
-    int m_checked_idx;
+    int m_read_idx; //指向缓冲区m_read_buf的数据末尾的下一个字节
+    int m_checked_idx; //指向从状态机当前正在分析的字节
     int m_start_line;
     char m_write_buf[WRITE_BUFFER_SIZE];
     int m_write_idx;
@@ -135,7 +139,7 @@ private:
     struct iovec m_iv[2];
     int m_iv_count;
     int cgi;        //是否启用的POST
-    char *m_string; //存储请求头数据
+    char *m_string; //存储消息体数据
     int bytes_to_send;
     int bytes_have_send;
     char *doc_root;

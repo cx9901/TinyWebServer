@@ -32,6 +32,7 @@ Config::Config(){
     actor_model = 0;
 }
 
+//argc表示参数的个数，argv[]表示每个参数字符串
 void Config::parse_arg(int argc, char*argv[]){
     int opt;
     const char *str = "p:l:m:o:s:t:c:a:";
@@ -41,7 +42,7 @@ void Config::parse_arg(int argc, char*argv[]){
         {
         case 'p':
         {
-            PORT = atoi(optarg);
+            PORT = atoi(optarg); //optarg用来保存选项参数
             break;
         }
         case 'l':

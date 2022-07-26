@@ -53,7 +53,7 @@ void connection_pool::init(string url, string User, string PassWord, string DBNa
 		++m_FreeConn;
 	}
 
-	reserve = sem(m_FreeConn);
+	reserve = sem(m_FreeConn); //将信号量初始化为最大连接数
 
 	m_MaxConn = m_FreeConn;
 }

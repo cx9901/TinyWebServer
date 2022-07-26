@@ -4,17 +4,16 @@ WebServer::WebServer()
 {
     //http_conn类对象
     users = new http_conn[MAX_FD];
+    //定时器
+    users_timer = new client_data[MAX_FD];
 
     //root文件夹路径
     char server_path[200];
-    getcwd(server_path, 200);
+    getcwd(server_path, 200); //获得当前工作路径
     char root[6] = "/root";
-    m_root = (char *)malloc(strlen(server_path) + strlen(root) + 1);
+    m_root = new char[strlen(server_path) + strlen(root) + 1];
     strcpy(m_root, server_path);
     strcat(m_root, root);
-
-    //定时器
-    users_timer = new client_data[MAX_FD];
 }
 
 WebServer::~WebServer()
@@ -26,6 +25,7 @@ WebServer::~WebServer()
     delete[] users;
     delete[] users_timer;
     delete m_pool;
+    delete[] m_root;
 }
 
 void WebServer::init(int port, string user, string passWord, string databaseName, int log_write, 
@@ -77,9 +77,9 @@ void WebServer::log_write()
     if (0 == m_close_log)
     {
         //初始化日志
-        if (1 == m_log_write)
+        if (1 == m_log_write) //异步写入
             Log::get_instance()->init("./ServerLog", m_close_log, 2000, 800000, 800);
-        else
+        else //同步写入
             Log::get_instance()->init("./ServerLog", m_close_log, 2000, 800000, 0);
     }
 }
@@ -144,10 +144,12 @@ void WebServer::eventListen()
 
     ret = socketpair(PF_UNIX, SOCK_STREAM, 0, m_pipefd);
     assert(ret != -1);
-    utils.setnonblocking(m_pipefd[1]);
+    utils.setnonblocking(m_pipefd[1]); //设置管道写端为非阻塞
     utils.addfd(m_epollfd, m_pipefd[0], false, 0);
 
     utils.addsig(SIGPIPE, SIG_IGN);
+
+    //传递给主循环的信号值，这里只关注SIGALRM和SIGTERM
     utils.addsig(SIGALRM, utils.sig_handler, false);
     utils.addsig(SIGTERM, utils.sig_handler, false);
 
@@ -158,7 +160,8 @@ void WebServer::eventListen()
     Utils::u_epollfd = m_epollfd;
 }
 
-void WebServer::timer(int connfd, struct sockaddr_in client_address)
+//初始化客户端连接并设置定时器
+void WebServer::init_connn_and_timer(int connfd, struct sockaddr_in client_address)
 {
     users[connfd].init(connfd, client_address, m_root, m_CONNTrigmode, m_close_log, m_user, m_passWord, m_databaseName);
 
@@ -167,11 +170,11 @@ void WebServer::timer(int connfd, struct sockaddr_in client_address)
     users_timer[connfd].address = client_address;
     users_timer[connfd].sockfd = connfd;
     util_timer *timer = new util_timer;
+    users_timer[connfd].timer = timer;
+
     timer->user_data = &users_timer[connfd];
     timer->cb_func = cb_func;
-    time_t cur = time(NULL);
-    timer->expire = cur + 3 * TIMESLOT;
-    users_timer[connfd].timer = timer;
+    timer->expire = time(NULL) + 3 * TIMESLOT;
     utils.m_timer_lst.add_timer(timer);
 }
 
@@ -186,6 +189,7 @@ void WebServer::adjust_timer(util_timer *timer)
     LOG_INFO("%s", "adjust timer once");
 }
 
+//关闭连接
 void WebServer::deal_timer(util_timer *timer, int sockfd)
 {
     timer->cb_func(&users_timer[sockfd]);
@@ -201,7 +205,7 @@ bool WebServer::dealclinetdata()
 {
     struct sockaddr_in client_address;
     socklen_t client_addrlength = sizeof(client_address);
-    if (0 == m_LISTENTrigmode)
+    if (0 == m_LISTENTrigmode) //LT模式listenfd
     {
         int connfd = accept(m_listenfd, (struct sockaddr *)&client_address, &client_addrlength);
         if (connfd < 0)
@@ -215,10 +219,10 @@ bool WebServer::dealclinetdata()
             LOG_ERROR("%s", "Internal server busy");
             return false;
         }
-        timer(connfd, client_address);
+        init_connn_and_timer(connfd, client_address);
     }
 
-    else
+    else //ET模式listenfd
     {
         while (1)
         {
@@ -226,17 +230,16 @@ bool WebServer::dealclinetdata()
             if (connfd < 0)
             {
                 LOG_ERROR("%s:errno is:%d", "accept error", errno);
-                break;
+                return false;
             }
             if (http_conn::m_user_count >= MAX_FD)
             {
                 utils.show_error(connfd, "Internal server busy");
                 LOG_ERROR("%s", "Internal server busy");
-                break;
+                return false;
             }
-            timer(connfd, client_address);
+            init_connn_and_timer(connfd, client_address);
         }
-        return false;
     }
     return true;
 }
@@ -290,7 +293,7 @@ void WebServer::dealwithread(int sockfd)
         }
 
         //若监测到读事件，将该事件放入请求队列
-        m_pool->append(users + sockfd, 0);
+        m_pool->append(users + sockfd, 0); //0代表读事件
 
         while (true)
         {
@@ -339,7 +342,7 @@ void WebServer::dealwithwrite(int sockfd)
             adjust_timer(timer);
         }
 
-        m_pool->append(users + sockfd, 1);
+        m_pool->append(users + sockfd, 1); // state=1为写事件
 
         while (true)
         {
